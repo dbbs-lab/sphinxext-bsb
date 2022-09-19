@@ -3,6 +3,8 @@ from docutils.parsers.rst import Directive
 from docutils.statemachine import StringList
 from sphinx_design import icons
 
+__version__ = "0.0.1"
+
 
 class ComponentIntro(Directive):
     has_content = False

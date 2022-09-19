@@ -3,8 +3,9 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bsbdocs"
-version = "0.0.1"
+name = "sphinxext-bsb"
+description = "BSB Sphinx documentation extension"
+version = "0.0.2"
 dependencies = [
     "sphinx-design"
 ]
