@@ -16,7 +16,7 @@ from docutils.parsers.rst import Directive
 from docutils.statemachine import StringList
 from sphinx.util.docutils import SphinxDirective
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def example_function():
@@ -68,12 +68,16 @@ def depart_autoconfig_node(self, node):
 class AutoconfigDirective(SphinxDirective):
     required_arguments = 1
     has_content = False
-    option_spec = {"no-imports": docutils.parsers.rst.directives.flag}
+    option_spec = {
+        "no-imports": docutils.parsers.rst.directives.flag,
+        "max-depth": docutils.parsers.rst.directives.positive_int,
+    }
 
     def run(self):
         clsref = self.arguments[0]
         cls = class_()(clsref)
-        tree = self.guess_example(cls)
+        max_depth = self.options.get("max-depth", 100)
+        tree = self.guess_example(cls, max_depth)
         elem = AutoconfigNode()
         self.state.nested_parse(
             StringList(
@@ -82,13 +86,9 @@ class AutoconfigDirective(SphinxDirective):
                     "",
                     "    .. code-block:: Python",
                     "",
-                    *(
-                        ()
-                        if "no-imports" in self.options
-                        else (f"        {imp}" for imp in self.get_import_lines(cls))
+                    *self.get_python_tab(
+                        cls, tree, "no-imports" not in self.options, max_depth
                     ),
-                    "",
-                    *(f"        {line}" for line in self.get_python_lines(cls, tree)),
                     "",
                     *itertools.chain.from_iterable(
                         self.get_parser_lines(key, parser(), tree)
@@ -101,12 +101,48 @@ class AutoconfigDirective(SphinxDirective):
         )
         return [elem]
 
-    def guess_example(self, cls):
+    def get_python_tab(self, cls, tree, imports, max_depth):
+        lines = [
+            *(
+                f"        {imp}"
+                for imp in self.get_import_lines(cls, max_depth if imports else 0)
+            ),
+            "",
+            *(f"        {line}" for line in self.get_python_lines(cls, tree)),
+        ]
+        return self.collapse_empties(lines)
+
+    def collapse_empties(self, lines, chars=[("(", ")"), ("[", "]"), ("{", "}")]):
+        outlines = []
+        skip = False
+        for i in range(len(lines)):
+            if skip:
+                skip = False
+                continue
+            line1 = lines[i]
+            if i == len(lines) - 1:
+                outlines.append(line1)
+                break
+            line2 = lines[i + 1]
+            for schar, echar in chars:
+                if line1.endswith(schar) and line2.strip().startswith(echar):
+                    outlines.append(line1 + f"{echar},")
+                    skip = True
+                    break
+            else:
+                outlines.append(line1)
+        return outlines
+
+    def guess_example(self, cls, deeper):
+        if deeper == 0:
+            return ...
         attrs = get_config_attributes(cls)
-        tree = {attr.attr_name: self.guess_default(attr) for attr in attrs.values()}
+        tree = {
+            attr.attr_name: self.guess_default(attr, deeper) for attr in attrs.values()
+        }
         return tree
 
-    def guess_default(self, attr):
+    def guess_default(self, attr, deeper):
         """
         Guess a default value/structure for the given attribute. Defaults are paired in
         tuples with functions that can unpack the tree value to their Python
@@ -121,8 +157,11 @@ class AutoconfigDirective(SphinxDirective):
         # If the attribute is a node type, we have to guess recursively.
         if attr.is_node_type():
             # Node types that come from private modules shouldn't be promoted,
-            # so instead we make use of the dictionary notation.
-            if any(m.startswith("_") for m in type_.__module__.split(".")):
+            # so instead we make use of the dictionary notation. Or, this autoconfig
+            # has the "no-imports" option set, which disables the prepended import stmnt
+            if "no-imports" in self.options or any(
+                m.startswith("_") for m in type_.__module__.split(".")
+            ):
                 untree = self.private_untree(type_)
             else:
                 untree = self.public_untree(type_)
@@ -131,7 +170,7 @@ class AutoconfigDirective(SphinxDirective):
                 untree = self.list_untree(untree)
             elif isinstance(attr, ConfigurationDictAttribute):
                 untree = self.dict_untree(untree)
-            return (untree, self.guess_example(type_))
+            return (untree, self.guess_example(type_, deeper - 1))
         else:
             return (self.argument_untree, self.guess_example_value(attr))
 
@@ -223,9 +262,16 @@ class AutoconfigDirective(SphinxDirective):
         except TypeError:
             # If the element wasn't packed as a tuple it's just a list/dict attr
             return tree
-        if getattr(tree[0], "dict_repack", False):
-            node_data = {"key_of_thing": (None, node_data)}
-        if getattr(tree[0], "list_repack", False):
+        list_repack = getattr(tree[0], "list_repack", False)
+        dict_repack = getattr(tree[0], "dict_repack", False)
+        if node_data is ...:
+            if list_repack:
+                return []
+            else:
+                return {}
+        if dict_repack:
+            node_data = {"name_of_the_thing": (None, node_data)}
+        if list_repack:
             node_data = [(None, node_data)]
         if isinstance(node_data, dict):
             return {k: self.raw_untree(v) for k, v in node_data.items()}
@@ -236,7 +282,10 @@ class AutoconfigDirective(SphinxDirective):
 
     def public_untree(self, cls):
         def untree(key, value):
-            lines = self.get_python_lines(cls, value)
+            if value is ...:
+                lines = self.get_python_lines(cls, {})
+            else:
+                lines = self.get_python_lines(cls, value)
             lines[0] = f"{key}={lines[0]}"
             lines[-1] += ","
             return lines
@@ -245,7 +294,10 @@ class AutoconfigDirective(SphinxDirective):
 
     def private_untree(self, cls):
         def untree(key, value):
-            lines = self.get_python_lines(cls, value)
+            if value is ...:
+                lines = self.get_python_lines(cls, {})
+            else:
+                lines = self.get_python_lines(cls, value)
             lines[0] = key + "={"
             for i in range(1, len(lines) - 1):
                 line = lines[i]
@@ -268,6 +320,8 @@ class AutoconfigDirective(SphinxDirective):
 
     def list_untree(self, inner_untree):
         def untree(key, value):
+            if value is ...:
+                return [f"{key}=[", "],"]
             lines = inner_untree(key, value)
             lines[0] = lines[0].split("=")[0] + "=["
             lines.insert(1, "  {")
@@ -281,21 +335,22 @@ class AutoconfigDirective(SphinxDirective):
     def argument_untree(self, key, value):
         return [f"{key}={repr(value)},"]
 
-    def get_imports(self, cls):
+    def get_imports(self, cls, deeper):
         imports = {}
         if not any(m.startswith("_") for m in cls.__module__.split(".")):
-            imports.setdefault(cls.__module__, []).append(cls.__name__)
-        for attr in get_config_attributes(cls).values():
-            if attr.is_node_type():
-                for k, v in self.get_imports(attr.get_type()).items():
-                    imports.setdefault(k, []).extend(v)
+            imports.setdefault(cls.__module__, set()).add(cls.__name__)
+        if deeper > 0:
+            for attr in get_config_attributes(cls).values():
+                if attr.is_node_type():
+                    for k, v in self.get_imports(attr.get_type(), deeper - 1).items():
+                        imports.setdefault(k, set()).update(v)
 
         return imports
 
-    def get_import_lines(self, cls):
+    def get_import_lines(self, cls, depth):
         return [
             f"from {key} import {', '.join(value)}"
-            for key, value in self.get_imports(cls).items()
+            for key, value in self.get_imports(cls, depth).items()
         ]
 
 
