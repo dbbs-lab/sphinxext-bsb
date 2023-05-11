@@ -16,7 +16,7 @@ from docutils.parsers.rst import Directive
 from docutils.statemachine import StringList
 from sphinx.util.docutils import SphinxDirective
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def example_function():
