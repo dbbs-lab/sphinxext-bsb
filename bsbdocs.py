@@ -23,16 +23,13 @@ def example_function():
     pass
 
 
-example_function.__module__ = "my_module"
-example_function.__name__ = "my_function"
-
 _example_values = {
     bool: True,
     list: [],
     str: "example",
     int: 42,
     float: 3.14,
-    FunctionType: example_function,
+    FunctionType: "my_module.my_function",
     dict: {},
 }
 
