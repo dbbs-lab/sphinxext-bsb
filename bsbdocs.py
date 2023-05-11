@@ -162,14 +162,17 @@ class AutoconfigDirective(SphinxDirective):
                 untree = self.private_untree(type_)
             else:
                 untree = self.public_untree(type_)
-            # Configuration lists and dicts should be packed into a list/dict
-            if isinstance(attr, ConfigurationListAttribute):
-                untree = self.list_untree(untree)
-            elif isinstance(attr, ConfigurationDictAttribute):
-                untree = self.dict_untree(untree)
-            return (untree, self.guess_example(type_, deeper - 1))
+            value = self.guess_example(type_, deeper - 1)
         else:
-            return (self.argument_untree, self.guess_example_value(attr))
+            untree = self.argument_untree
+            value = self.guess_example_value(attr)
+        # Configuration lists and dicts should be packed into a list/dict
+        if isinstance(attr, ConfigurationListAttribute):
+            untree = self.list_untree(untree)
+        elif isinstance(attr, ConfigurationDictAttribute):
+            untree = self.dict_untree(untree)
+        return untree, value
+
 
     def guess_example_value(self, attr):
         type_ = self.get_attr_type(attr)
