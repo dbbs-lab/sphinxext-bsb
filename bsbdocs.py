@@ -9,7 +9,7 @@ from bsb.config._attrs import (
     ConfigurationListAttribute,
     ConfigurationDictAttribute,
 )
-from bsb.config.parsers import get_parser_classes
+from bsb.config.parsers import get_configuration_parser_classes
 from bsb.config.types import class_
 from docutils import nodes
 from docutils.parsers.rst import Directive
@@ -89,7 +89,7 @@ class AutoconfigDirective(SphinxDirective):
                     "",
                     *itertools.chain.from_iterable(
                         self.get_parser_lines(key, parser(), tree)
-                        for key, parser in get_parser_classes().items()
+                        for key, parser in get_configuration_parser_classes().items()
                     ),
                 ]
             ),
